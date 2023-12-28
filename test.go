@@ -17,6 +17,16 @@ type NodeInfo struct {
     Scini      string
 }
 
+func checkKubeletStatus(IP string) string {
+    cmd := exec.Command("ssh", "-o", "StrictHostKeyChecking=no", "root@"+IP, "systemctl status kubelet | awk -F'[()]' '/Active:/ {print $2}'")
+    out, err := cmd.Output()
+    if err != nil {
+        fmt.Println("Error executing command:", err)
+        return ""
+    }
+    return string(out)
+}
+
 func insertNodeDefaultInfo() []NodeInfo {
     cmd := exec.Command("kubectl", "get", "nodes")
 
