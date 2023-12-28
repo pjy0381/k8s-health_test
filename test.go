@@ -7,6 +7,7 @@ import (
     "strings"
     "time"
     "sync"
+    "sort"
 )
 
 type NodeInfo struct {
@@ -66,6 +67,10 @@ func insertNodeDefaultInfo() []NodeInfo {
     }
 
     wg.Wait()
+    
+    sort.Slice(nodes, func(i, j int) bool {
+        return nodes[i].Name < nodes[j].Name
+    })
 
     return nodes
 }
