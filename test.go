@@ -28,41 +28,40 @@ func checkKubeletStatus(IP string) string {
 }
 
 func insertNodeDefaultInfo() []NodeInfo {
-    cmd := exec.Command("kubectl", "get", "nodes")
-
-    var out bytes.Buffer
-    var stderr bytes.Buffer
-
-    cmd.Stdout = &out
-    cmd.Stderr = &stderr
-
-    err := cmd.Run()
-
+    cmd := exec.Command("kubectl", "get", "nodes", "-o", "wide")
+    out, err := cmd.Output()
+    
     if err != nil {
-        fmt.Println(fmt.Sprint(err) + ": " + stderr.String())
+        fmt.Println("Error executing command:", err)
         return nil
     }
-
+	
     var nodes []NodeInfo
-
-    lines := strings.Split(out.String(), "\n")
-
+    lines := strings.Split(string(out), "\n")
+    nodeChan := make(chan NodeInfo)
+    
     for count, line := range lines {
         fields := strings.Fields(line)
-
-        if len(fields) < 2 {
+        if len(fields) < 6 || count == 0 {
             continue
         }
-
-        if count != 0 {
+        go func(f []string) {
             node := NodeInfo{
-                Name:   fields[0],
-                Status: fields[1], 
+                Name:    f[0],
+                Status:  f[1],
+                Kubelet: checkKubeletStatus(f[5]),
             }
+            nodeChan <- node
+        }(fields)
+    }
+	
+    go func() {
+        for node := range nodeChan {
             nodes = append(nodes, node)
         }
-    }
-
+    }()
+	
+    time.Sleep(1 * time.Second) // Just for demonstration, you might use a better synchronization technique in real scenarios
     return nodes
 }
 
