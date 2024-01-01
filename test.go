@@ -1,12 +1,13 @@
 package main
 
 import (
-    "bytes"
     "fmt"
     "os"
     "os/exec"
     "strings"
     "time"
+    "sync"
+    "sort"
 )
 
 type NodeInfo struct {
@@ -17,41 +18,59 @@ type NodeInfo struct {
     Scini      string
 }
 
+func checkKubeletStatus(IP string) string {
+    cmd := exec.Command("ssh", "-o", "StrictHostKeyChecking=no", "root@"+IP, "systemctl status kubelet | awk -F'[()]' '/Active:/ {print $2}'")
+    out, err := cmd.Output()
+    if err != nil {
+        fmt.Println("Error executing command:", err)
+        return ""
+    }
+    return string(out)
+}
+
 func insertNodeDefaultInfo() []NodeInfo {
-    cmd := exec.Command("kubectl", "get", "nodes")
-
-    var out bytes.Buffer
-    var stderr bytes.Buffer
-
-    cmd.Stdout = &out
-    cmd.Stderr = &stderr
-
-    err := cmd.Run()
+    cmd := exec.Command("kubectl", "get", "nodes", "-o", "wide")
+    out, err := cmd.Output()
 
     if err != nil {
-        fmt.Println(fmt.Sprint(err) + ": " + stderr.String())
+        fmt.Println("Error executing command:", err)
         return nil
     }
 
     var nodes []NodeInfo
+    lines := strings.Split(string(out), "\n")
+    var wg sync.WaitGroup
 
-    lines := strings.Split(out.String(), "\n")
+    var mutex sync.Mutex
 
     for count, line := range lines {
         fields := strings.Fields(line)
-
-        if len(fields) < 2 {
+        if len(fields) < 6 || count == 0 {
             continue
         }
 
-        if count != 0 {
+        wg.Add(1)
+
+        go func(f []string) {
+            defer wg.Done()
+
             node := NodeInfo{
-                Name:   fields[0],
-                Status: fields[1], 
+                Name:    f[0],
+                Status:  f[1],
+                Kubelet: checkKubeletStatus(f[5]),
             }
+
+            mutex.Lock()
             nodes = append(nodes, node)
-        }
+            mutex.Unlock()
+        }(fields)
     }
+
+    wg.Wait()
+    
+    sort.Slice(nodes, func(i, j int) bool {
+        return nodes[i].Name < nodes[j].Name
+    })
 
     return nodes
 }
