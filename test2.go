@@ -50,11 +50,11 @@ func countNodeCondition(nodes []NodeInfo, statusCondition, serviceCondition stri
 func getStatuses(IP string) (kubeletStatus, containerdStatus, sciniStatus string) {
 	cmd := exec.Command(
 		"ssh", "-o", "StrictHostKeyChecking=no", username+"@"+IP,
-		"result=$(sudo systemctl status kubelet | awk -F'[()]' '/Active:/ {print $2}');",
+		"result=$(sudo systemctl status kubelet | grep Active | awk '{print $2}');",
 		"echo kubelet:$result;",
-		"result=$(sudo systemctl status containerd | awk -F'[()]' '/Active:/ {print $2}');",
+		"result=$(sudo systemctl status containerd | grep Active | awk '{print $2}');",
 		"echo containerd:$result;",
-		"result=$(sudo systemctl status scini | awk -F'[()]' '/Active:/ {print $2}');",
+		"result=$(sudo systemctl status scini | grep Active | awk '{print $2}');",
 		"echo scini:$result;")
 
 	out, err := cmd.CombinedOutput()
@@ -156,23 +156,19 @@ func getMainInfo(command string) []string {
 
 func createMainInfoList(nodes []NodeInfo) [][]string {
 	var mainInfoList [][]string
-
 	result := getMainInfo("kubectl get deployment -n kube-system coredns --no-headers")
 	result2 := getMainInfo("kubectl get deployment -n kubesphere-system ks-apiserver --no-headers")
 
-	readyList := countNodeCondition(nodes, "Ready", "running")
-	errorList := countNodeCondition(nodes, "Error", "error")
+	readyList := countNodeCondition(nodes, "Ready", "active")
 
 	mainInfoList = append(mainInfoList, result)
 	mainInfoList = append(mainInfoList, result2)
 
 	mainInfoList = append(mainInfoList, []string{"", "", ""})
-
-	mainInfoList = append(mainInfoList, []string{"Node", fmt.Sprintf("%d/%d", readyList[0], len(nodes)), fmt.Sprintf("%d/%d", errorList[0], len(nodes))})
-	mainInfoList = append(mainInfoList, []string{"kubelet", fmt.Sprintf("%d/%d", readyList[1], len(nodes)), fmt.Sprintf("%d/%d", errorList[1], len(nodes))})
-	mainInfoList = append(mainInfoList, []string{"containerD", fmt.Sprintf("%d/%d", readyList[2], len(nodes)), fmt.Sprintf("%d/%d", errorList[2], len(nodes))})
-	mainInfoList = append(mainInfoList, []string{"SCINI", fmt.Sprintf("%d/%d", readyList[3], len(nodes)), fmt.Sprintf("%d/%d", errorList[3], len(nodes))})
-
+	mainInfoList = append(mainInfoList, []string{"Node", fmt.Sprintf("%d/%d", readyList[0], len(nodes)), fmt.Sprintf("%d/%d", len(nodes)-readyList[0], len(nodes))})
+	mainInfoList = append(mainInfoList, []string{"kubelet", fmt.Sprintf("%d/%d", readyList[1], len(nodes)), fmt.Sprintf("%d/%d", len(nodes)-readyList[1], len(nodes))})
+	mainInfoList = append(mainInfoList, []string{"containerD", fmt.Sprintf("%d/%d", readyList[2], len(nodes)), fmt.Sprintf("%d/%d", len(nodes)-readyList[2], len(nodes))})
+	mainInfoList = append(mainInfoList, []string{"SCINI", fmt.Sprintf("%d/%d", readyList[3], len(nodes)), fmt.Sprintf("%d/%d", len(nodes)-readyList[3], len(nodes))})
 	return mainInfoList
 }
 
