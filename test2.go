@@ -18,7 +18,10 @@ type NodeInfo struct {
 	Scini      string
 }
 
-var formatString = "%-20s %-15s %-15s\n"
+var (
+	formatString = "%-20s %-15s %-15s\n"
+	username     = "dspaas"
+)
 
 func countNodeCondition(nodes []NodeInfo, statusCondition, serviceCondition string) []int {
 	var countN = make([]int, 4)
@@ -46,7 +49,7 @@ func countNodeCondition(nodes []NodeInfo, statusCondition, serviceCondition stri
 
 func getStatuses(IP string) (kubeletStatus, containerdStatus, sciniStatus string) {
 	cmd := exec.Command(
-		"ssh", "-o", "StrictHostKeyChecking=no", "root@"+IP,
+		"ssh", "-o", "StrictHostKeyChecking=no", username+"@"+IP,
 		"sudo systemctl status kubelet | awk -F'[()]' '/Active:/ {print $2}';",
 		"sudo systemctl status containerd | awk -F'[()]' '/Active:/ {print $2}';",
 		"sudo systemctl status sciniStatus | awk -F'[()]' '/Active:/ {print $2}'")
