@@ -50,22 +50,37 @@ func countNodeCondition(nodes []NodeInfo, statusCondition, serviceCondition stri
 func getStatuses(IP string) (kubeletStatus, containerdStatus, sciniStatus string) {
 	cmd := exec.Command(
 		"ssh", "-o", "StrictHostKeyChecking=no", username+"@"+IP,
-		"sudo systemctl status kubelet | awk -F'[()]' '/Active:/ {print $2}';",
-		"sudo systemctl status containerd | awk -F'[()]' '/Active:/ {print $2}';",
-		"sudo systemctl status sciniStatus | awk -F'[()]' '/Active:/ {print $2}'")
+		"result=$(sudo systemctl status kubelet | awk -F'[()]' '/Active:/ {print $2}');",
+		"echo kubelet:$result;",
+		"result=$(sudo systemctl status containerd | awk -F'[()]' '/Active:/ {print $2}');",
+		"echo containerd:$result;",
+		"result=$(sudo systemctl status scini | awk -F'[()]' '/Active:/ {print $2}');",
+		"echo scini:$result;")
 
 	out, err := cmd.CombinedOutput()
 	output := string(out)
 	statuses := strings.Split(output, "\n")
+	cmd.Process.Kill()
 
 	if err != nil {
 		fmt.Println("Error executing command:", err)
 		return "", "", ""
 	}
 
-	kubeletStatus = strings.TrimSpace(statuses[0])
-	containerdStatus = strings.TrimSpace(statuses[1])
-	sciniStatus = strings.TrimSpace(statuses[2])
+	for _, status := range statuses {
+		if strings.Contains(status, "kubelet") {
+			kubeletStatus = strings.TrimPrefix(status, "kubelet:")
+			kubeletStatus = strings.TrimSpace(kubeletStatus)
+		}
+		if strings.Contains(status, "containerd") {
+			containerdStatus = strings.TrimPrefix(status, "containerd:")
+			containerdStatus = strings.TrimSpace(containerdStatus)
+		}
+		if strings.Contains(status, "scini") {
+			sciniStatus = strings.TrimPrefix(status, "scini:")
+			sciniStatus = strings.TrimSpace(sciniStatus)
+		}
+	}
 
 	return kubeletStatus, containerdStatus, sciniStatus
 }
