@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -23,7 +24,11 @@ var (
 	username     = "dspaas"
 )
 
-func countNodeCondition(nodes []NodeInfo, statusCondition, serviceCondition string) []int {
+func countNodeCondition(nodes []NodeInfo, statusCondition, serviceCondition string) ([]int, error) {
+	if statusCondition == "" || serviceCondition == "" {
+		return nil, errors.New("statusCondition or serviceCondition is empty")
+	}
+
 	var countN = make([]int, 4)
 
 	for _, node := range nodes {
@@ -44,7 +49,8 @@ func countNodeCondition(nodes []NodeInfo, statusCondition, serviceCondition stri
 		}
 
 	}
-	return countN
+
+	return countN, nil
 }
 
 func getStatuses(IP string) (kubeletStatus, containerdStatus, sciniStatus string) {
@@ -159,7 +165,11 @@ func createMainInfoList(nodes []NodeInfo) [][]string {
 	result := getMainInfo("kubectl get deployment -n kube-system coredns --no-headers")
 	result2 := getMainInfo("kubectl get deployment -n kubesphere-system ks-apiserver --no-headers")
 
-	readyList := countNodeCondition(nodes, "Ready", "active")
+	readyList, readyListErr := countNodeCondition(nodes, "Ready", "active")
+
+	if readyListErr != nil {
+		fmt.Println("Error(readyList):", readyListErr)
+	}
 
 	mainInfoList = append(mainInfoList, result)
 	mainInfoList = append(mainInfoList, result2)
