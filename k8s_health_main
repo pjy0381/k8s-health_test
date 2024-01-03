@@ -1,0 +1,18 @@
+package main
+
+
+var (
+
+    formatString = "%-20s %-15s %-15s\n"
+
+    username = "사용자"
+
+)
+
+
+func main() {
+
+    go refreshLoop()
+
+}
+
