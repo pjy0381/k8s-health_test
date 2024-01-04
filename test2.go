@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"os"
@@ -199,6 +200,7 @@ func printNodeInfo(mainInfoList [][]string) {
 	fmt.Println("Save Current PODs: s")
 	fmt.Println("View PODs Differences: v")
 	fmt.Println("Check Storage Class: c")
+	fmt.Println("Exit: q")
 }
 
 func clearScreen() {
@@ -207,14 +209,30 @@ func clearScreen() {
 	cmd.Run()
 }
 
+func refreshLoop() {
+    ticker := time.NewTicker(5 * time.Second)
+    for range ticker.C {
+        clearScreen()
+        nodes := insertNodeDefaultInfo()
+        mainInfoList := createMainInfoList(nodes)
+        printNodeInfo(mainInfoList)
+    }
+}
+
+func getUserInput() string {
+    reader := bufio.NewReader(os.Stdin)
+    input, _ := reader.ReadString('\n')
+    return input[:len(input)-1]
+}
+
 func main() {
-	ticker := time.NewTicker(5 * time.Second)
-
-	for range ticker.C {
-		clearScreen()
-		nodes := insertNodeDefaultInfo()
-		mainInfoList := createMainInfoList(nodes)
-		printNodeInfo(mainInfoList)
-
-	}
+	var command string
+        go refreshLoop()
+        
+	for {
+                command = getUserInput()
+                if command == "q" {
+                        break
+                }
+        }
 }
