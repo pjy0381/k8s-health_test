@@ -232,7 +232,12 @@ func main() {
 	for {
                 command = getUserInput()
                 if command == "q" {
-                        break
+                 	clearScreen()
+			break
                 }
         }
 }
+
+
+
+
