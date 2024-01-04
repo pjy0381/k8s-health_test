@@ -222,7 +222,9 @@ func refreshLoop() {
 func getUserInput() string {
     reader := bufio.NewReader(os.Stdin)
     input, _ := reader.ReadString('\n')
-    return input[:len(input)-1]
+    input = strings.TrimSpace(input) 
+
+    return inpu	
 }
 
 func main() {
