@@ -20,10 +20,71 @@ type NodeInfo struct {
 	Scini      string
 }
 
+type PodInfo struct {
+    Name string
+    Status string
+}
+
+
+
 var (
 	formatString = "%-20s %-15s %-15s\n"
 	username     = "dspaas"
+	inputCommand = "m"
 )
+
+type PodInfo struct {
+
+    Name string
+
+    Status string
+
+}
+
+
+
+func countPodCondition(pods []PodInfo,  statusCondition string) (int, error) {
+    if len(statusCondition) == 0 {
+        return 0, errors.New("podCondition is empty")
+    }
+
+    var count = 0
+
+    for _, pod := range pods {
+        if pod.Status == statusCondition {
+            count++
+        }
+    }
+    return count, nil
+
+}
+
+func parsePodInfo() ([]PodInfo, error) {
+    cmd := exec.Command("kubectl", "get", "pods", "-o", "wide", "-A", "--no-headers")
+    output, err := cmd.CombinedOutput()
+
+    if err != nil {
+        return nil, err
+    }
+
+    lines := strings.Split(string(output), "\n")
+    var podInfoList []PodInfo
+
+    for _, line := range lines {
+        fields := strings.Fields(line)
+
+        if len(fields) >= 2 {
+            podInfo := PodInfo{
+                Name:   fields[0],
+                Status: fields[3],
+            }
+            podInfoList = append(podInfoList, podInfo)
+        }
+    }
+    return podInfoList, nil
+}
+
+
 
 func countNodeCondition(nodes []NodeInfo, statusCondition, serviceCondition string) ([]int, error) {
 	if statusCondition == "" || serviceCondition == "" {
@@ -208,15 +269,30 @@ func clearScreen() {
 	cmd.Stdout = os.Stdout
 	cmd.Run()
 }
-
 func refreshLoop() {
-    ticker := time.NewTicker(5 * time.Second)
-    for range ticker.C {
-        clearScreen()
-        nodes := insertNodeDefaultInfo()
-        mainInfoList := createMainInfoList(nodes)
-        printNodeInfo(mainInfoList)
-    }
+    ticker := time.NewTicker(5 * time.Second)
+    defer ticker.Stop()
+
+    for {
+        select {
+        case <-ticker.C:
+            if inputCommand == "m" {
+                nodes := insertNodeDefaultInfo()
+                pods, err := parsePodInfo()
+
+                if err != nil{
+                    fmt.Println("zz")
+                }
+                mainInfoList := createMainInfoList(pods, nodes)
+
+                if !reflect.DeepEqual(mainInfoList, previousMainInfoList) {
+                    clearScreen()
+                    printNodeInfo(mainInfoList)
+                    previousMainInfoList = mainInfoList
+                }
+            }
+        }
+    }
 }
 
 func getUserInput() string {
