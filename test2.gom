@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -21,97 +22,70 @@ type NodeInfo struct {
 }
 
 type PodInfo struct {
-    Name string
-    Status string
+	Name   string
+	Status string
 }
-
-
 
 var (
-	formatString = "%-20s %-15s %-15s\n"
-	username     = "dspaas"
-	inputCommand = "m"
+	formatString       = "%-20s %-15s\n"
+	username           = "dspaas"
+	inputCommand       = "m"
+	previousMainInfoList [][]string
 )
 
-type PodInfo struct {
-
-    Name string
-
-    Status string
-
-}
-
-
-
-func countPodCondition(pods []PodInfo,  statusCondition string) (int, error) {
-    if len(statusCondition) == 0 {
-        return 0, errors.New("podCondition is empty")
-    }
-
-    var count = 0
-
-    for _, pod := range pods {
-        if pod.Status == statusCondition {
-            count++
-        }
-    }
-    return count, nil
-
+func countPodCondition(pods []PodInfo, statusCondition string) (int, error) {
+	if len(statusCondition) == 0 {
+		return 0, errors.New("podCondition is empty")
+	}
+	var count = 0
+	for _, pod := range pods {
+		if pod.Status == statusCondition {
+			count++
+		}
+	}
+	return count, nil
 }
 
 func parsePodInfo() ([]PodInfo, error) {
-    cmd := exec.Command("kubectl", "get", "pods", "-o", "wide", "-A", "--no-headers")
-    output, err := cmd.CombinedOutput()
-
-    if err != nil {
-        return nil, err
-    }
-
-    lines := strings.Split(string(output), "\n")
-    var podInfoList []PodInfo
-
-    for _, line := range lines {
-        fields := strings.Fields(line)
-
-        if len(fields) >= 2 {
-            podInfo := PodInfo{
-                Name:   fields[0],
-                Status: fields[3],
-            }
-            podInfoList = append(podInfoList, podInfo)
-        }
-    }
-    return podInfoList, nil
+	cmd := exec.Command("kubectl", "get", "pods", "-o", "wide", "-A", "--no-headers")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, err
+	}
+	lines := strings.Split(string(output), "\n")
+	var podInfoList []PodInfo
+	for _, line := range lines {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 {
+			podInfo := PodInfo{
+				Name:   fields[0],
+				Status: fields[3],
+			}
+			podInfoList = append(podInfoList, podInfo)
+		}
+	}
+	return podInfoList, nil
 }
-
-
 
 func countNodeCondition(nodes []NodeInfo, statusCondition, serviceCondition string) ([]int, error) {
 	if statusCondition == "" || serviceCondition == "" {
 		return nil, errors.New("statusCondition or serviceCondition is empty")
 	}
-
 	var countN = make([]int, 4)
-
 	for _, node := range nodes {
 		if node.Status == statusCondition {
 			countN[0]++
 		}
-
 		if node.Kubelet == serviceCondition {
 			countN[1]++
 		}
-
 		if node.Containerd == serviceCondition {
 			countN[2]++
 		}
-
 		if node.Scini == serviceCondition {
 			countN[3]++
 		}
-
 	}
-
 	return countN, nil
 }
 
@@ -124,17 +98,14 @@ func getStatuses(IP string) (kubeletStatus, containerdStatus, sciniStatus string
 		"echo containerd:$result;",
 		"result=$(sudo systemctl status scini | grep Active | awk '{print $2}');",
 		"echo scini:$result;")
-
 	out, err := cmd.CombinedOutput()
 	output := string(out)
 	statuses := strings.Split(output, "\n")
 	cmd.Process.Kill()
-
 	if err != nil {
 		fmt.Println("Error executing command:", err)
 		return "", "", ""
 	}
-
 	for _, status := range statuses {
 		if strings.Contains(status, "kubelet") {
 			kubeletStatus = strings.TrimPrefix(status, "kubelet:")
@@ -149,36 +120,28 @@ func getStatuses(IP string) (kubeletStatus, containerdStatus, sciniStatus string
 			sciniStatus = strings.TrimSpace(sciniStatus)
 		}
 	}
-
 	return kubeletStatus, containerdStatus, sciniStatus
 }
 
 func insertNodeDefaultInfo() []NodeInfo {
 	cmd := exec.Command("kubectl", "get", "nodes", "-o", "wide")
 	out, err := cmd.Output()
-
 	if err != nil {
 		fmt.Println("Error executing command:", err)
 		return nil
 	}
-
 	var nodes []NodeInfo
 	lines := strings.Split(string(out), "\n")
 	var wg sync.WaitGroup
-
 	var mutex sync.Mutex
-
 	for count, line := range lines {
 		fields := strings.Fields(line)
 		if len(fields) < 6 || count == 0 {
 			continue
 		}
-
 		wg.Add(1)
-
 		go func(f []string) {
 			defer wg.Done()
-
 			kubeletStatus, containerdStatus, sciniStatus := getStatuses(f[5])
 			node := NodeInfo{
 				Name:       f[0],
@@ -187,76 +150,59 @@ func insertNodeDefaultInfo() []NodeInfo {
 				Scini:      sciniStatus,
 				Containerd: containerdStatus,
 			}
-
 			mutex.Lock()
 			nodes = append(nodes, node)
 			mutex.Unlock()
 		}(fields)
 	}
 	wg.Wait()
-
 	sort.Slice(nodes, func(i, j int) bool {
 		return nodes[i].Name < nodes[j].Name
 	})
-
 	return nodes
 }
 
 func getMainInfo(command string) []string {
 	parts := strings.Split(command, " ")
-
 	cmd := exec.Command(parts[0], parts[1:]...)
 	out, err := cmd.CombinedOutput()
-
 	if err != nil {
 		return []string{}
 	}
-
 	output := string(out)
 	info := strings.Fields(output)
-
 	if len(info) >= 3 {
 		return info[:3]
 	}
-
 	return []string{}
 }
 
-func createMainInfoList(nodes []NodeInfo) [][]string {
+func createMainInfoList(pods []PodInfo, nodes []NodeInfo) [][]string {
 	var mainInfoList [][]string
-	result := getMainInfo("kubectl get deployment -n kube-system coredns --no-headers")
-	result2 := getMainInfo("kubectl get deployment -n kubesphere-system ks-apiserver --no-headers")
-
+	prCount, prErr := countPodCondition(pods, "Running")
 	readyList, readyListErr := countNodeCondition(nodes, "Ready", "active")
-
-	if readyListErr != nil {
+	if readyListErr != nil || prErr != nil {
 		fmt.Println("Error(readyList):", readyListErr)
 	}
-
-	mainInfoList = append(mainInfoList, result)
-	mainInfoList = append(mainInfoList, result2)
-
+	mainInfoList = append(mainInfoList, []string{"Pods", fmt.Sprintf("%d/%d", prCount, len(pods))})
 	mainInfoList = append(mainInfoList, []string{"", "", ""})
-	mainInfoList = append(mainInfoList, []string{"Node", fmt.Sprintf("%d/%d", readyList[0], len(nodes)), fmt.Sprintf("%d/%d", len(nodes)-readyList[0], len(nodes))})
-	mainInfoList = append(mainInfoList, []string{"kubelet", fmt.Sprintf("%d/%d", readyList[1], len(nodes)), fmt.Sprintf("%d/%d", len(nodes)-readyList[1], len(nodes))})
-	mainInfoList = append(mainInfoList, []string{"containerD", fmt.Sprintf("%d/%d", readyList[2], len(nodes)), fmt.Sprintf("%d/%d", len(nodes)-readyList[2], len(nodes))})
-	mainInfoList = append(mainInfoList, []string{"SCINI", fmt.Sprintf("%d/%d", readyList[3], len(nodes)), fmt.Sprintf("%d/%d", len(nodes)-readyList[3], len(nodes))})
+	mainInfoList = append(mainInfoList, []string{"Node", fmt.Sprintf("%d/%d", readyList[0], len(nodes))})
+	mainInfoList = append(mainInfoList, []string{"kubelet", fmt.Sprintf("%d/%d", readyList[1], len(nodes))})
+	mainInfoList = append(mainInfoList, []string{"containerD", fmt.Sprintf("%d/%d", readyList[2], len(nodes))})
+	mainInfoList = append(mainInfoList, []string{"SCINI", fmt.Sprintf("%d/%d", readyList[3], len(nodes))})
 	return mainInfoList
 }
 
 func printNodeInfo(mainInfoList [][]string) {
-	fmt.Printf(formatString, "Service", "READY", "UP-TO-DATE")
-
+	fmt.Printf(formatString, "Service", "READY")
 	for _, info := range mainInfoList {
-		if len(info) < 3 {
+		if len(info) < 2 {
 			fmt.Printf("Error\n")
 			continue
 		}
-		fmt.Printf(formatString, info[0], info[1], info[2])
+		fmt.Printf(formatString, info[0], info[1])
 	}
-
 	fmt.Printf("\n\n\n")
-
 	fmt.Println("Node List: n")
 	fmt.Println("Save Current PODs: s")
 	fmt.Println("View PODs Differences: v")
@@ -269,52 +215,45 @@ func clearScreen() {
 	cmd.Stdout = os.Stdout
 	cmd.Run()
 }
+
 func refreshLoop() {
-    ticker := time.NewTicker(5 * time.Second)
-    defer ticker.Stop()
-
-    for {
-        select {
-        case <-ticker.C:
-            if inputCommand == "m" {
-                nodes := insertNodeDefaultInfo()
-                pods, err := parsePodInfo()
-
-                if err != nil{
-                    fmt.Println("zz")
-                }
-                mainInfoList := createMainInfoList(pods, nodes)
-
-                if !reflect.DeepEqual(mainInfoList, previousMainInfoList) {
-                    clearScreen()
-                    printNodeInfo(mainInfoList)
-                    previousMainInfoList = mainInfoList
-                }
-            }
-        }
-    }
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			if inputCommand == "m" {
+				nodes := insertNodeDefaultInfo()
+				pods, err := parsePodInfo()
+				if err != nil {
+					fmt.Println("error")
+				}
+				mainInfoList := createMainInfoList(pods, nodes)
+				if !reflect.DeepEqual(mainInfoList, previousMainInfoList) {
+					clearScreen()
+					printNodeInfo(mainInfoList)
+					previousMainInfoList = mainInfoList
+				}
+			}
+		}
+	}
 }
 
 func getUserInput() string {
-    reader := bufio.NewReader(os.Stdin)
-    input, _ := reader.ReadString('\n')
-    input = strings.TrimSpace(input) 
-
-    return inpu	
+	reader := bufio.NewReader(os.Stdin)
+	input, _ := reader.ReadString('\n')
+	input = strings.TrimSpace(input)
+	return input
 }
 
 func main() {
 	var command string
-        go refreshLoop()
-        
+	go refreshLoop()
 	for {
-                command = getUserInput()
-                if command == "q" {
-                 	clearScreen()
+		command = getUserInput()
+		if command == "q" {
+			clearScreen()
 			break
-                }
-        }
+		}
+	}
 }
-
-
-
