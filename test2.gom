@@ -193,6 +193,23 @@ func createMainInfoList(pods []PodInfo, nodes []NodeInfo) [][]string {
 	return mainInfoList
 }
 
+func printNodeDetailInfo(nodes []NodeInfo) {
+    if nodes == nil {
+        return
+    }
+    fmt.Printf("%-5s %-40s %-10s %-10s %-20s %-20s\n", "No.", "Node Name", "Status", "kubelet", "containerd", "scini")
+    for idx, node := range nodes {
+        fmt.Printf("%-5d %-40s %-10s %-10s %-20s %-20s\n", idx+1, node.Name, node.Status, node.Kubelet, node.Containerd, node.Scini)
+    }
+        fmt.Printf("\n\n\n")
+        fmt.Println("Main: m")
+        fmt.Println("Node List: n")
+        fmt.Println("Save Current PODs: s")
+        fmt.Println("View PODs Differences: v")
+        fmt.Println("Check Storage Class: c")
+        fmt.Println("Exit: q")
+}
+
 func printNodeInfo(mainInfoList [][]string) {
 	fmt.Printf(formatString, "Service", "READY")
 	for _, info := range mainInfoList {
@@ -247,13 +264,21 @@ func getUserInput() string {
 }
 
 func main() {
-	var command string
-	go refreshLoop()
-	for {
-		command = getUserInput()
-		if command == "q" {
-			clearScreen()
-			break
-		}
-	}
+        var command string
+        go refreshLoop()
+        for {
+                command = getUserInput()
+                if command == "q" {
+                        clearScreen()
+                        break
+                } else if command == "n"{
+                        clearScreen()
+                        nodes := insertNodeDefaultInfo()
+                        printNodeDetailInfo(nodes)
+                } else if command == "m" {
+                        clearScreen()
+                        printNodeInfo(previousMainInfoList)
+                }
+                inputCommand = command
+        }
 }
