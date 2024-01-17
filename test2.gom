@@ -89,77 +89,81 @@ func countNodeCondition(nodes []NodeInfo, statusCondition, serviceCondition stri
 	return countN, nil
 }
 
-func getStatuses(IP string) (kubeletStatus, containerdStatus, sciniStatus string) {
-	cmd := exec.Command(
-		"ssh", "-o", "StrictHostKeyChecking=no", username+"@"+IP,
-		"result=$(sudo systemctl status kubelet | grep Active | awk '{print $2}');",
-		"echo kubelet:$result;",
-		"result=$(sudo systemctl status containerd | grep Active | awk '{print $2}');",
-		"echo containerd:$result;",
-		"result=$(sudo systemctl status scini | grep Active | awk '{print $2}');",
-		"echo scini:$result;")
-	out, err := cmd.CombinedOutput()
-	output := string(out)
-	statuses := strings.Split(output, "\n")
-	cmd.Process.Kill()
-	if err != nil {
-		fmt.Println("Error executing command:", err)
-		return "", "", ""
-	}
-	for _, status := range statuses {
-		if strings.Contains(status, "kubelet") {
-			kubeletStatus = strings.TrimPrefix(status, "kubelet:")
-			kubeletStatus = strings.TrimSpace(kubeletStatus)
-		}
-		if strings.Contains(status, "containerd") {
-			containerdStatus = strings.TrimPrefix(status, "containerd:")
-			containerdStatus = strings.TrimSpace(containerdStatus)
-		}
-		if strings.Contains(status, "scini") {
-			sciniStatus = strings.TrimPrefix(status, "scini:")
-			sciniStatus = strings.TrimSpace(sciniStatus)
-		}
-	}
-	return kubeletStatus, containerdStatus, sciniStatus
+func getStatuses(IP string) (kubeletStatus, containerdStatus, sciniStatus string, err error) {
+        cmd := exec.Command(
+                "ssh", IP,
+                "sudo systemctl status kubelet | grep Active | awk '{print \"kubelet:\"$2}' && "+
+                        "sudo systemctl status containerd | grep Active | awk '{print \"containerd:\"$2}' && "+
+                        "sudo systemctl status scini | grep Active | awk '{print \"scini:\"$2}'",
+        )
+        out, err := cmd.CombinedOutput()
+        if err != nil {
+                return "", "", "", fmt.Errorf("error executing command: %v", err)
+        }
+        output := string(out)
+        statuses := strings.Split(output, "\n")
+        for _, status := range statuses {
+                if strings.Contains(status, "kubelet") {
+                        kubeletStatus = strings.TrimPrefix(status, "kubelet:")
+                        kubeletStatus = strings.TrimSpace(kubeletStatus)
+                }
+                if strings.Contains(status, "containerd") {
+                        containerdStatus = strings.TrimPrefix(status, "containerd:")
+                        containerdStatus = strings.TrimSpace(containerdStatus)
+                }
+                if strings.Contains(status, "scini") {
+                        sciniStatus = strings.TrimPrefix(status, "scini:")
+                        sciniStatus = strings.TrimSpace(sciniStatus)
+                }
+        }
+        return kubeletStatus, containerdStatus, sciniStatus, nil
 }
 
 func insertNodeDefaultInfo() []NodeInfo {
-	cmd := exec.Command("kubectl", "get", "nodes", "-o", "wide")
-	out, err := cmd.Output()
-	if err != nil {
-		fmt.Println("Error executing command:", err)
-		return nil
-	}
-	var nodes []NodeInfo
-	lines := strings.Split(string(out), "\n")
-	var wg sync.WaitGroup
-	var mutex sync.Mutex
-	for count, line := range lines {
-		fields := strings.Fields(line)
-		if len(fields) < 6 || count == 0 {
-			continue
-		}
-		wg.Add(1)
-		go func(f []string) {
-			defer wg.Done()
-			kubeletStatus, containerdStatus, sciniStatus := getStatuses(f[5])
-			node := NodeInfo{
-				Name:       f[0],
-				Status:     f[1],
-				Kubelet:    kubeletStatus,
-				Scini:      sciniStatus,
-				Containerd: containerdStatus,
-			}
-			mutex.Lock()
-			nodes = append(nodes, node)
-			mutex.Unlock()
-		}(fields)
-	}
-	wg.Wait()
-	sort.Slice(nodes, func(i, j int) bool {
-		return nodes[i].Name < nodes[j].Name
-	})
-	return nodes
+        cmd := exec.Command("kubectl", "get", "nodes", "-o", "wide", "--no-headers")
+        out, err := cmd.Output()
+        if err != nil {
+                fmt.Println("Error executing command:", err)
+                return nil
+        }
+        lines := strings.Split(string(out), "\n")
+        var nodes []NodeInfo
+        var wg sync.WaitGroup
+        var mutex sync.Mutex
+        for _, line := range lines {
+                fields := strings.Fields(line)
+                if len(fields) < 3 {
+                        continue
+                }
+                node := NodeInfo{Name: fields[0], Status: fields[1]}
+                nodes = append(nodes, node)
+                wg.Add(1)
+                go updateNodeInfo(fields, &nodes, &wg, &mutex)
+        }
+        wg.Wait()
+        sort.Slice(nodes, func(i, j int) bool {
+                return nodes[i].Name < nodes[j].Name
+        })
+        return nodes
+}
+
+func updateNodeInfo(f []string, nodes *[]NodeInfo, wg *sync.WaitGroup, mutex *sync.Mutex) {
+        defer wg.Done()
+        kubeletStatus, containerdStatus, sciniStatus, err := getStatuses(f[0])
+        if err != nil {
+                fmt.Println("Error getting statuses:", err)
+                return
+        }
+        mutex.Lock()
+        for i := range *nodes {
+                if (*nodes)[i].Name == f[0] {
+                        (*nodes)[i].Kubelet = kubeletStatus
+                        (*nodes)[i].Containerd = containerdStatus
+                        (*nodes)[i].Scini = sciniStatus
+                        break
+                }
+        }
+        mutex.Unlock()
 }
 
 func getMainInfo(command string) []string {
